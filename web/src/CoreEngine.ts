@@ -197,9 +197,9 @@ export class GameEngine {
 
             // Check UI interactions
             if (pos.y > this.playAreaHeight) {
-                // Ultimate Button Bounds: x:(width-115)~width-15, y: playAreaHeight+15~60
-                const btnX = this.canvas.width - 115;
-                if (pos.x > btnX && pos.x < btnX + 100 && pos.y > this.playAreaHeight + 15 && pos.y < this.playAreaHeight + 60) {
+                // Ultimate Button Bounds: x:(width-105)~width-15, y: playAreaHeight+15~60
+                const btnX = this.canvas.width - 105;
+                if (pos.x > btnX && pos.x < btnX + 90 && pos.y > this.playAreaHeight + 15 && pos.y < this.playAreaHeight + 60) {
                     if (this.ultimateCharge >= this.maxUltimateCharge) {
                         this.useUltimate();
                     }
@@ -646,32 +646,32 @@ export class GameEngine {
         if (this.team.length > 0) {
             ctx.fillStyle = '#fff';
             ctx.font = '16px sans-serif';
-            ctx.fillText('現在:', 190, this.playAreaHeight + 15);
+            ctx.fillText('現在:', 200, this.playAreaHeight + 15);
             const img0 = images[`player_${this.team[this.currentPlayerIndex].type.toLowerCase()}`];
-            if (img0 && img0.complete && img0.naturalWidth > 0) ctx.drawImage(img0, 235, this.playAreaHeight + 5, 36, 36);
+            if (img0 && img0.complete && img0.naturalWidth > 0) ctx.drawImage(img0, 245, this.playAreaHeight + 5, 36, 36);
 
             if (this.team.length > 1) {
                 const next1Idx = (this.currentPlayerIndex + 1) % this.team.length;
                 ctx.fillStyle = '#aaa';
                 ctx.font = '14px sans-serif';
-                ctx.fillText('次弾1:', 190, this.playAreaHeight + 55);
+                ctx.fillText('次弾1:', 195, this.playAreaHeight + 55);
                 const img1 = images[`player_${this.team[next1Idx].type.toLowerCase()}`];
-                if (img1 && img1.complete && img1.naturalWidth > 0) ctx.drawImage(img1, 235, this.playAreaHeight + 45, 30, 30);
+                if (img1 && img1.complete && img1.naturalWidth > 0) ctx.drawImage(img1, 245, this.playAreaHeight + 45, 30, 30);
 
                 if (this.team.length > 2) {
                     const next2Idx = (this.currentPlayerIndex + 2) % this.team.length;
                     ctx.fillStyle = '#777';
-                    ctx.fillText('次弾2:', 190, this.playAreaHeight + 95);
+                    ctx.fillText('次弾2:', 195, this.playAreaHeight + 95);
                     const img2 = images[`player_${this.team[next2Idx].type.toLowerCase()}`];
-                    if (img2 && img2.complete && img2.naturalWidth > 0) ctx.drawImage(img2, 235, this.playAreaHeight + 85, 30, 30);
+                    if (img2 && img2.complete && img2.naturalWidth > 0) ctx.drawImage(img2, 245, this.playAreaHeight + 85, 30, 30);
                 }
             }
         }
 
         // Ultimate Skill Button
-        const btnX = this.canvas.width - 110; // Position from right
+        const btnX = this.canvas.width - 105; // Position from right
         const btnY = this.playAreaHeight + 15;
-        const btnW = 95;
+        const btnW = 90;
         const btnH = 45;
 
         ctx.fillStyle = this.ultimateCharge >= this.maxUltimateCharge ? '#e74c3c' : '#555';
