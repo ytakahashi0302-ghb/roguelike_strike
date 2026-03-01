@@ -58,7 +58,7 @@ export class Player {
             ctx.save();
             ctx.translate(this.x, this.y);
             // Characters are now sprites, do not rotate them
-            const size = this.radius * 3.5; // Increased size for visibility while keeping hitbox same
+            const size = this.radius * 2.5; // Adjusted size to ~70% of previous 3.5
             ctx.drawImage(img, -size / 2, -size / 2, size, size);
             ctx.restore();
         } else {
@@ -110,8 +110,8 @@ export class Player {
 export class Enemy {
     x: number;
     y: number;
-    width: number = 64;
-    height: number = 64;
+    width: number = 80; // Increased to ~1.3x of 64
+    height: number = 80;
     hp: number;
     maxHp: number;
     type: EnemyType;
