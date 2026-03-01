@@ -286,7 +286,7 @@ const App: React.FC = () => {
                         <div style={{ display: 'flex', gap: 10, justifyContent: 'center' }}>
                             {['Bounce', 'Pierce', 'Blast'].map(t => (
                                 <button key={t} onClick={() => handleRewardSelect(t as any)} style={{ padding: '10px', cursor: 'pointer', background: '#2ecc71', color: '#fff', border: 'none', borderRadius: 8, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-                                    <img src={`/assets/images/player_${t.toLowerCase()}.png`} width={48} height={48} alt={t} style={{ marginBottom: 5 }} />
+                                    <img src={`${import.meta.env.BASE_URL}assets/images/player_${t.toLowerCase()}.png`} width={48} height={48} alt={t} style={{ marginBottom: 5 }} />
                                     <span>{t}</span>
                                 </button>
                             ))}

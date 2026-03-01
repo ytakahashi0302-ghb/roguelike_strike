@@ -1,4 +1,4 @@
-import { Player, Enemy, PlayerType, EnemyType, UltimateType, ArtifactType, loadImage, images } from './Entities';
+import { Player, Enemy, EnemyType, UltimateType, ArtifactType, loadImage, images } from './Entities';
 
 export type GamePhase = 'StartScreen' | 'StageSelect' | 'Playing' | 'RewardSelect' | 'ArtifactSelect' | 'GameOver' | 'SkillTree' | 'MapSelect';
 
@@ -76,11 +76,22 @@ export class GameEngine {
     }
 
     private loadAssets() {
-        const playerTypes: PlayerType[] = ['Bounce', 'Pierce', 'Split', 'Heavy', 'Blast'];
-        playerTypes.forEach(t => loadImage(`player_${t.toLowerCase()}`, `/assets/images/player_${t.toLowerCase()}.png`));
-        const enemyTypes: EnemyType[] = ['Basic', 'Shield', 'Diver', 'Spawner', 'Mine'];
-        enemyTypes.forEach(t => loadImage(`enemy_${t.toLowerCase()}`, `/assets/images/enemy_${t.toLowerCase()}.png`));
-        loadImage('bg_stage', '/assets/images/bg_stage.png');
+        // Image loading utility
+        const imageUrls = [
+            { name: 'player_bounce', url: `${import.meta.env.BASE_URL}assets/images/player_bounce.png` },
+            { name: 'player_pierce', url: `${import.meta.env.BASE_URL}assets/images/player_pierce.png` },
+            { name: 'player_split', url: `${import.meta.env.BASE_URL}assets/images/player_heavy.png` }, // Corrected to heavy as per original logic
+            { name: 'player_heavy', url: `${import.meta.env.BASE_URL}assets/images/player_heavy.png` },
+            { name: 'player_blast', url: `${import.meta.env.BASE_URL}assets/images/player_blast.png` },
+            { name: 'enemy_basic', url: `${import.meta.env.BASE_URL}assets/images/enemy_basic.png` },
+            { name: 'enemy_shield', url: `${import.meta.env.BASE_URL}assets/images/enemy_shield.png` },
+            { name: 'enemy_diver', url: `${import.meta.env.BASE_URL}assets/images/enemy_diver.png` },
+            { name: 'enemy_spawner', url: `${import.meta.env.BASE_URL}assets/images/enemy_spawner.png` },
+            { name: 'enemy_mine', url: `${import.meta.env.BASE_URL}assets/images/enemy_mine.png` },
+            { name: 'bg_stage', url: `${import.meta.env.BASE_URL}assets/images/bg_stage.png` }
+        ];
+
+        imageUrls.forEach(img => loadImage(img.name, img.url));
     }
 
     initRun(ultimate: UltimateType = 'Nuke') {
