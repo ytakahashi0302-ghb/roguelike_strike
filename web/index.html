@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="ja">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Rogue Strike</title>
+</head>
+
+<body>
+  <div id="app">
+    <canvas id="gameCanvas" width="400" height="600"></canvas>
+
+    <!-- UI Overlays -->
+    <div id="ui-layer" class="hidden">
+      <!-- Start Screen -->
+      <div id="screen-start" class="screen hidden">
+        <h1>Rogue Strike</h1>
+        <p>Pull to aim, release to strike!</p>
+        <button id="btn-start">Start Run</button>
+      </div>
+
+      <!-- Stage Selection -->
+      <div id="screen-stage" class="screen hidden">
+        <h2>Select Next Stage</h2>
+        <div class="stage-options" id="stage-options-container">
+          <!-- Dynamic Options Here -->
+        </div>
+      </div>
+
+      <!-- Reward Selection -->
+      <div id="screen-reward" class="screen hidden">
+        <h2>Stage Cleared!</h2>
+        <p>Choose a reward:</p>
+        <div class="reward-options" id="reward-options-container">
+          <!-- Dynamic Options Here -->
+        </div>
+      </div>
+
+      <!-- Game Over -->
+      <div id="screen-gameover" class="screen hidden">
+        <h2>GAME OVER</h2>
+        <p id="gameover-stats"></p>
+        <button id="btn-restart">Try Again</button>
+      </div>
+    </div>
+  </div>
+  <script type="module" src="/src/main.ts"></script>
+</body>
+
+</html>
