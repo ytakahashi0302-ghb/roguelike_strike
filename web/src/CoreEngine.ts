@@ -1,6 +1,18 @@
-import { Player, Enemy, PlayerType, EnemyType, UltimateType, loadImage, images } from './Entities';
+import { Player, Enemy, PlayerType, EnemyType, UltimateType, ArtifactType, loadImage, images } from './Entities';
 
-export type GamePhase = 'StartScreen' | 'StageSelect' | 'Playing' | 'RewardSelect' | 'GameOver' | 'SkillTree';
+export type GamePhase = 'StartScreen' | 'StageSelect' | 'Playing' | 'RewardSelect' | 'ArtifactSelect' | 'GameOver' | 'SkillTree' | 'MapSelect';
+
+export type MapNodeType = 'Battle' | 'Elite' | 'Boss' | 'Shop';
+
+export interface MapNode {
+    id: string;
+    type: MapNodeType;
+    level: number;
+    connectedTo: string[]; // IDs of nodes this node can move to
+    cleared: boolean;
+    x: number;
+    y: number;
+}
 
 export class GameEngine {
     canvas: HTMLCanvasElement;
@@ -13,8 +25,14 @@ export class GameEngine {
     turn = 1;
     currentStage = 1;
     maxStages = 5;
+    currentWave = 1;
+    maxWaves = 3;
     currentPhase: GamePhase = 'StartScreen';
     playAreaHeight = 460;
+
+    // Map System
+    mapNodes: MapNode[] = [];
+    currentNodeId: string | null = null;
 
     currentPlayerIndex = 0;
     team: Player[] = [];
@@ -23,6 +41,8 @@ export class GameEngine {
     explosions: { x: number, y: number, radius: number, alpha: number }[] = [];
     floatingTexts: { x: number, y: number, text: string, alpha: number, vy: number, color: string }[] = [];
     particles: { x: number, y: number, vx: number, vy: number, life: number, maxLife: number, color: string }[] = [];
+
+    screenShake = 0;
 
     totalCoins = 0;
     bonusDamage = 0;
@@ -35,6 +55,12 @@ export class GameEngine {
     ultimateCharge = 0;
     maxUltimateCharge = 10;
     ultimateBuffTurns = 0;
+
+    // Artifacts
+    currentArtifacts: ArtifactType[] = [];
+
+    // Effects
+    ultimateFlashTimer = 0;
 
     // Callbacks for React
     onStateChange: () => void = () => { };
@@ -61,6 +87,7 @@ export class GameEngine {
         this.selectedUltimate = ultimate;
         this.ultimateCharge = 0;
         this.ultimateBuffTurns = 0;
+        this.currentArtifacts = [];
         this.team = [new Player(this.canvas.width / 2, this.playAreaHeight - 40, 'Bounce')];
         // Apply meta progression
         if (this.baseCapacity > 1) {
@@ -74,7 +101,51 @@ export class GameEngine {
 
         this.currentStage = 1;
         this.turn = 1;
-        this.setPhase('StageSelect');
+        this.generateMap();
+        this.setPhase('MapSelect');
+    }
+
+    generateMap() {
+        this.mapNodes = [];
+        this.currentNodeId = null;
+        const levels = this.maxStages;
+
+        let prevLevelIds: string[] = [];
+        for (let l = 1; l <= levels; l++) {
+            const numNodes = l === levels ? 1 : Math.floor(Math.random() * 2) + 2; // 2 or 3 nodes except for boss
+            const currentLevelIds: string[] = [];
+
+            for (let n = 0; n < numNodes; n++) {
+                const id = `L${l}_N${n}`;
+                let type: MapNodeType = 'Battle';
+                if (l === levels) type = 'Boss';
+                else if (l % 3 === 0) type = 'Shop'; // Example shop placement
+                else if (Math.random() > 0.6) type = 'Elite';
+
+                this.mapNodes.push({
+                    id, type, level: l, connectedTo: [], cleared: false,
+                    x: this.canvas.width / (numNodes + 1) * (n + 1),
+                    y: this.canvas.height - (l * 80)
+                });
+                currentLevelIds.push(id);
+
+                // Connect from previous level
+                if (prevLevelIds.length > 0) {
+                    // Simple logic: connect to at least one previous node
+                    const parentIdx = Math.floor(n / numNodes * prevLevelIds.length);
+                    const parent = this.mapNodes.find(pn => pn.id === prevLevelIds[parentIdx]);
+                    if (parent) parent.connectedTo.push(id);
+                }
+            }
+            // Ensure all parents have at least one outgoing connection to avoid dead ends
+            prevLevelIds.forEach(pid => {
+                const p = this.mapNodes.find(pn => pn.id === pid);
+                if (p && p.connectedTo.length === 0) {
+                    p.connectedTo.push(currentLevelIds[Math.floor(Math.random() * currentLevelIds.length)]);
+                }
+            });
+            prevLevelIds = currentLevelIds;
+        }
     }
 
     startStage() {
@@ -93,7 +164,9 @@ export class GameEngine {
             p.hasSplit = false;
         });
 
-        this.spawnEnemies(this.currentStage === this.maxStages ? 4 : 2, 50);
+        this.currentWave = 1;
+        this.maxWaves = this.currentStage === this.maxStages ? 5 : 3;
+        this.spawnEnemies(2, 50);
         this.setPhase('Playing');
     }
 
@@ -124,8 +197,8 @@ export class GameEngine {
 
             // Check UI interactions
             if (pos.y > this.playAreaHeight) {
-                // Ultimate Button Bounds: x:290~380, y: playAreaHeight+20~60
-                if (pos.x > 290 && pos.x < 380 && pos.y > this.playAreaHeight + 20 && pos.y < this.playAreaHeight + 60) {
+                // Ultimate Button Bounds: x:260~380, y: playAreaHeight+15~60
+                if (pos.x > 260 && pos.x < 380 && pos.y > this.playAreaHeight + 15 && pos.y < this.playAreaHeight + 60) {
                     if (this.ultimateCharge >= this.maxUltimateCharge) {
                         this.useUltimate();
                     }
@@ -179,7 +252,15 @@ export class GameEngine {
     }
 
     // Game Logic
-    spawnEnemies(rows: number, startY: number) {
+    spawnEnemies(rows: number, startY: number, forceBoss: boolean = false) {
+        if (forceBoss) {
+            const boss = new Enemy(this.canvas.width / 2 - 40, startY, 50, 'Boss');
+            boss.width = 80;
+            boss.height = 80;
+            this.enemies.push(boss);
+            return;
+        }
+
         const types: EnemyType[] = ['Basic', 'Basic', 'Shield', 'Diver', 'Spawner', 'Mine'];
         const spawnChance = Math.min(0.20 + (this.currentStage * 0.1), 0.7);
 
@@ -209,6 +290,7 @@ export class GameEngine {
         this.ultimateCharge = 0;
         if (this.selectedUltimate === 'Nuke') {
             this.createExplosion(this.canvas.width / 2, this.playAreaHeight / 2, 400, 10);
+            this.screenShake = 30; // Huge shake
             this.onStateChange();
         } else if (this.selectedUltimate === 'DoubleDamage') {
             this.ultimateBuffTurns = 1;
@@ -216,6 +298,7 @@ export class GameEngine {
         } else if (this.selectedUltimate === 'Heal') {
             this.hasShield = true;
             this.enemies.forEach(e => e.y -= 100);
+            this.screenShake = 15; // Moderate shake
             this.onStateChange();
         }
     }
@@ -230,19 +313,42 @@ export class GameEngine {
         }
         let newEnemies: Enemy[] = [];
         this.enemies.forEach(e => {
-            const drop = e.type === 'Diver' ? 80 : 40;
+            const drop = e.type === 'Diver' ? 80 : (e.type === 'Boss' ? 20 : 40);
             e.y += drop;
             if (e.type === 'Spawner' && this.turn % 3 === 0) {
                 newEnemies.push(new Enemy(e.x - 65, e.y, Math.max(1, Math.floor(this.turn / 2)), 'Basic'));
                 newEnemies.push(new Enemy(e.x + 65, e.y, Math.max(1, Math.floor(this.turn / 2)), 'Basic'));
             }
+            if (e.type === 'Boss' && this.turn % 4 === 0) {
+                // Boss spawns divers
+                newEnemies.push(new Enemy(e.x - 60, e.y + 40, 5, 'Diver'));
+                newEnemies.push(new Enemy(e.x + 60, e.y + 40, 5, 'Diver'));
+                this.screenShake += 10;
+            }
         });
         this.enemies.push(...newEnemies);
         this.enemies = this.enemies.filter(e => e.x >= 0 && e.x + e.width <= this.canvas.width);
 
-        if (this.turn % 3 === 0) {
-            this.spawnEnemies(1, 10);
+        // Wave progression logic
+        if (this.enemies.length === 0 || this.turn % 5 === 0) {
+            if (this.currentWave < this.maxWaves) {
+                this.currentWave++;
+                this.floatingTexts.push({ x: this.canvas.width / 2 - 50, y: this.playAreaHeight / 2, text: `WAVE ${this.currentWave}`, alpha: 1.0, vy: -1, color: '#f1c40f' });
+
+                // Spawn new wave
+                const isFinalBossWave = this.currentWave === this.maxWaves && this.currentStage === this.maxStages;
+                this.spawnEnemies(isFinalBossWave ? 1 : 2, 10, isFinalBossWave);
+            }
         }
+
+        // Check defense line (Thorns artifact)
+        this.enemies.forEach((e, i) => {
+            if (e.y + e.height > this.playAreaHeight - 30) {
+                if (this.currentArtifacts.includes('Thorns')) {
+                    this.damageEnemy(e, i, 1);
+                }
+            }
+        });
 
         const prevPos = { x: this.team[this.currentPlayerIndex].x, y: this.team[this.currentPlayerIndex].y };
         this.currentPlayerIndex = (this.currentPlayerIndex + 1) % this.team.length;
@@ -252,15 +358,24 @@ export class GameEngine {
 
         this.onStateChange();
 
-        if (this.enemies.length === 0) {
-            // Stage Cleared! Earn coins
+        if (this.enemies.length === 0 && this.currentWave === this.maxWaves) {
+            // Node Cleared!
+            const node = this.currentNodeId ? this.mapNodes.find(n => n.id === this.currentNodeId) : undefined;
+            if (node) {
+                node.cleared = true;
+            }
+
             const coinsEarned = this.turn + (this.currentStage * 10);
             this.totalCoins += coinsEarned;
 
             if (this.currentStage === this.maxStages) {
-                this.setPhase('GameOver'); // Game Cleared
+                this.setPhase('GameOver');
             } else {
-                this.setPhase('RewardSelect');
+                if (node && node.type === 'Elite') {
+                    this.setPhase('ArtifactSelect');
+                } else {
+                    this.setPhase('RewardSelect');
+                }
             }
         }
     }
@@ -282,9 +397,18 @@ export class GameEngine {
         e.hp -= damage;
         this.floatingTexts.push({ x: e.x + Math.random() * e.width, y: e.y + Math.random() * 20, text: damage.toString(), alpha: 1.0, vy: -1.5, color: '#ff3333' });
 
+        if (damage >= 5) {
+            this.screenShake = Math.max(this.screenShake, 10);
+        }
+
         if (e.hp <= 0) {
             this.enemies.splice(index, 1);
-            this.totalCoins += 2; // Extra coins for kills
+            let coins = 2; // Extra coins for kills
+            if (this.currentArtifacts.includes('CoinUp')) {
+                coins = 3;
+            }
+            this.totalCoins += coins;
+            this.screenShake = Math.max(this.screenShake, 5); // Small shake on kill
             if (e.type === 'Mine') {
                 this.activeProjectiles.forEach(p => { p.vx = 0; p.vy = 0; });
                 this.explosions.push({ x: e.x + e.width / 2, y: e.y + e.height / 2, radius: 100, alpha: 0.5 });
@@ -305,6 +429,11 @@ export class GameEngine {
 
                 if (distance <= p.radius) {
                     let actualDamage = p.damage * (this.ultimateBuffTurns > 0 ? 2 : 1);
+
+                    if (this.currentArtifacts.includes('FirstStrike') && e.hp === e.maxHp) {
+                        actualDamage *= 2; // Double damage on full HP enemies
+                    }
+
                     if (e.type === 'Shield') {
                         if (testY >= e.y + e.height - 5 && p.vy < 0) {
                             actualDamage = 1;
@@ -314,7 +443,7 @@ export class GameEngine {
 
                     // Emit hit particles
                     for (let k = 0; k < 5; k++) {
-                        this.particles.push({ x: testX, y: testY, vx: (Math.random() - 0.5) * 4, vy: (Math.random() - 0.5) * 4, life: 1.0, maxLife: 1.0, color: '#f1c40f' });
+                        this.particles.push({ x: testX, y: testY, vx: (Math.random() - 0.5) * 4, vy: (Math.random() - 0.5) * 4, life: 1.0, maxLife: 1.0, color: '#f39c12' });
                     }
 
                     if (p.type === 'Split' && !p.hasSplit && !p.isChild) {
@@ -350,6 +479,15 @@ export class GameEngine {
     draw() {
         const { ctx, canvas } = this;
         ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        ctx.save();
+        if (this.screenShake > 0) {
+            const dx = (Math.random() - 0.5) * this.screenShake;
+            const dy = (Math.random() - 0.5) * this.screenShake;
+            ctx.translate(dx, dy);
+            this.screenShake *= 0.9;
+            if (this.screenShake < 1) this.screenShake = 0;
+        }
 
         const bgImg = images['bg_stage'];
         if (bgImg && bgImg.complete && bgImg.naturalWidth > 0) {
@@ -414,7 +552,22 @@ export class GameEngine {
             if (this.activeProjectiles.length === 0 && this.team.length > 0) {
                 this.team[this.currentPlayerIndex].draw(ctx);
             } else {
-                this.activeProjectiles.forEach(p => p.draw(ctx));
+                this.activeProjectiles.forEach(p => {
+                    // Draw trail
+                    if (p.history.length > 0) {
+                        ctx.beginPath();
+                        ctx.moveTo(p.x, p.y);
+                        for (let t = 0; t < p.history.length; t++) {
+                            ctx.lineTo(p.history[t].x, p.history[t].y);
+                        }
+                        ctx.strokeStyle = 'rgba(52, 152, 219, 0.3)';
+                        ctx.lineWidth = 15;
+                        ctx.lineCap = 'round';
+                        ctx.lineJoin = 'round';
+                        ctx.stroke();
+                    }
+                    p.draw(ctx);
+                });
             }
 
             // Draw floating texts
@@ -434,7 +587,7 @@ export class GameEngine {
                 }
             }
 
-            this.drawUI();
+            this.drawUI(ctx);
         }
 
         if (this.isDragging && this.activeProjectiles.length === 0 && this.currentPhase === 'Playing') {
@@ -456,76 +609,93 @@ export class GameEngine {
                 ctx.fill();
             }
         }
+
+        if (this.ultimateFlashTimer > 0) {
+            ctx.fillStyle = `rgba(255, 255, 255, ${this.ultimateFlashTimer / 20})`;
+            ctx.fillRect(0, 0, this.canvas.width, this.playAreaHeight);
+            this.ultimateFlashTimer--;
+        }
+
+        ctx.restore(); // Restore after screen shake
     }
 
-    private drawUI() {
-        const { ctx, canvas } = this;
+    drawUI(ctx: CanvasRenderingContext2D) {
+        // UI Dashboard at the bottom
+        ctx.fillStyle = '#2c3e50';
+        ctx.fillRect(0, this.playAreaHeight, this.canvas.width, this.canvas.height - this.playAreaHeight);
+        ctx.strokeStyle = '#34495e';
+        ctx.lineWidth = 4;
+        ctx.strokeRect(0, this.playAreaHeight, this.canvas.width, this.canvas.height - this.playAreaHeight);
 
-        // Draw UI Area Background
-        ctx.fillStyle = '#1a1a2e';
-        ctx.fillRect(0, this.playAreaHeight, canvas.width, canvas.height - this.playAreaHeight);
-        ctx.strokeStyle = '#4a4a8a';
-        ctx.lineWidth = 3;
-        ctx.strokeRect(0, this.playAreaHeight, canvas.width, canvas.height - this.playAreaHeight);
-
-        // Status Text
+        // Status Info (Left)
         ctx.fillStyle = '#fff';
-        ctx.font = '16px sans-serif';
+        ctx.font = 'bold 16px sans-serif';
         ctx.textAlign = 'left';
-        ctx.fillText(`ステージ: ${this.currentStage}`, 15, this.playAreaHeight + 30);
-        ctx.fillText(`ターン: ${this.turn}`, 15, this.playAreaHeight + 60);
-        ctx.fillText(`敵の数: ${this.enemies.length}`, 15, this.playAreaHeight + 90);
-
+        ctx.textBaseline = 'top';
+        ctx.fillText(`ステージ: ${this.currentStage}/${this.maxStages}`, 15, this.playAreaHeight + 15);
+        ctx.fillText(`WAVE: ${this.currentWave}/${this.maxWaves}`, 130, this.playAreaHeight + 15);
+        ctx.fillText(`ターン: ${this.turn}`, 15, this.playAreaHeight + 40);
         ctx.fillStyle = '#f1c40f';
-        ctx.fillText(`コイン: ${this.totalCoins}`, 15, this.playAreaHeight + 120);
+        ctx.fillText(`コイン: ${this.totalCoins}`, 130, this.playAreaHeight + 40);
+        ctx.fillStyle = '#fff';
+        ctx.fillText(`残敵: ${this.enemies.length}`, 15, this.playAreaHeight + 65);
+
 
         // Next Queue
         if (this.team.length > 0) {
             ctx.fillStyle = '#fff';
-            ctx.fillText('現在:', 140, this.playAreaHeight + 35);
+            ctx.font = '16px sans-serif';
+            ctx.fillText('現在:', 260, this.playAreaHeight + 15);
             const img0 = images[`player_${this.team[this.currentPlayerIndex].type.toLowerCase()}`];
-            if (img0 && img0.complete && img0.naturalWidth > 0) ctx.drawImage(img0, 190, this.playAreaHeight + 15, 36, 36);
+            if (img0 && img0.complete && img0.naturalWidth > 0) ctx.drawImage(img0, 310, this.playAreaHeight + 5, 36, 36);
 
             if (this.team.length > 1) {
                 const next1Idx = (this.currentPlayerIndex + 1) % this.team.length;
                 ctx.fillStyle = '#aaa';
                 ctx.font = '14px sans-serif';
-                ctx.fillText('次弾1:', 140, this.playAreaHeight + 75);
+                ctx.fillText('次弾1:', 260, this.playAreaHeight + 55);
                 const img1 = images[`player_${this.team[next1Idx].type.toLowerCase()}`];
-                if (img1 && img1.complete && img1.naturalWidth > 0) ctx.drawImage(img1, 190, this.playAreaHeight + 55, 30, 30);
+                if (img1 && img1.complete && img1.naturalWidth > 0) ctx.drawImage(img1, 310, this.playAreaHeight + 45, 30, 30);
 
                 if (this.team.length > 2) {
                     const next2Idx = (this.currentPlayerIndex + 2) % this.team.length;
                     ctx.fillStyle = '#777';
-                    ctx.fillText('次弾2:', 140, this.playAreaHeight + 115);
+                    ctx.fillText('次弾2:', 260, this.playAreaHeight + 95);
                     const img2 = images[`player_${this.team[next2Idx].type.toLowerCase()}`];
-                    if (img2 && img2.complete && img2.naturalWidth > 0) ctx.drawImage(img2, 190, this.playAreaHeight + 95, 30, 30);
+                    if (img2 && img2.complete && img2.naturalWidth > 0) ctx.drawImage(img2, 310, this.playAreaHeight + 85, 30, 30);
                 }
             }
         }
 
         // Ultimate Skill Button
+        const btnX = this.canvas.width - 135; // Position from right
+        const btnY = this.playAreaHeight + 15;
+        const btnW = 120;
+        const btnH = 45;
+
         ctx.fillStyle = this.ultimateCharge >= this.maxUltimateCharge ? '#e74c3c' : '#555';
-        ctx.fillRect(290, this.playAreaHeight + 20, 90, 40);
+        ctx.fillRect(btnX, btnY, btnW, btnH);
         ctx.fillStyle = '#fff';
         ctx.font = 'bold 16px sans-serif';
         ctx.textAlign = 'center';
-        ctx.fillText('必殺技', 335, this.playAreaHeight + 40);
+        ctx.fillText('必殺技', btnX + btnW / 2, btnY + btnH / 2 - 5);
         ctx.font = '12px sans-serif';
-        ctx.fillText(`${this.ultimateCharge}/${this.maxUltimateCharge}`, 335, this.playAreaHeight + 55);
+        ctx.fillText(`${this.ultimateCharge}/${this.maxUltimateCharge}`, btnX + btnW / 2, btnY + btnH / 2 + 10);
         if (this.ultimateBuffTurns > 0) {
             ctx.fillStyle = '#e74c3c';
-            ctx.fillText('バフ発動中!', 335, this.playAreaHeight + 15);
+            ctx.fillText('バフ発動中!', btnX + btnW / 2, btnY - 5);
         }
 
         // Defense Line
         ctx.strokeStyle = this.hasShield ? 'rgba(100, 255, 100, 0.8)' : 'rgba(255, 100, 100, 0.5)';
         ctx.setLineDash([5, 5]);
         ctx.beginPath();
-        ctx.moveTo(0, this.playAreaHeight - 40);
-        ctx.lineTo(canvas.width, this.playAreaHeight - 40);
+        ctx.moveTo(0, this.playAreaHeight - 30);
+        ctx.lineTo(this.canvas.width, this.playAreaHeight - 30);
         ctx.stroke();
         ctx.setLineDash([]);
+
+        ctx.restore(); // Restore from screen shake
     }
 
     startLoop() {

@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { GameEngine, GamePhase } from './CoreEngine';
-import { Player, PlayerType, UltimateType } from './Entities';
+import { GameEngine, GamePhase, MapNode } from './CoreEngine';
+import { Player, PlayerType, UltimateType, ArtifactType } from './Entities';
 
 const App: React.FC = () => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -36,7 +36,11 @@ const App: React.FC = () => {
         const engine = new GameEngine(canvasRef.current);
         engine.onStateChange = () => {
             setPhase(engine.currentPhase);
-            setStage(engine.currentStage);
+            if (engine.currentPhase === 'MapSelect') {
+                setStage(engine.currentStage);
+            } else { // Only update stage if not in MapSelect to avoid conflicts
+                setStage(engine.currentStage);
+            }
             setTurn(engine.turn);
             setCoins(engine.totalCoins);
 
@@ -71,18 +75,50 @@ const App: React.FC = () => {
         engineRef.current?.startStage();
     };
 
-    const handleRewardSelect = (type: PlayerType) => {
-        if (engineRef.current) {
-            const { team, canvas, bonusDamage } = engineRef.current;
-            const newPlayer = new Player(canvas.width / 2, engineRef.current.playAreaHeight - 40, type);
-            newPlayer.damage += bonusDamage;
-            if (team.length < 4) {
-                team.push(newPlayer);
-            } else {
-                team[team.length - 1] = newPlayer;
-            }
+    const handleNodeSelect = (node: MapNode) => {
+        if (!engineRef.current) return;
+
+        engineRef.current.currentNodeId = node.id;
+
+        if (node.type === 'Shop') {
+            // TODO: implement shop, for now just skip to next map node
             engineRef.current.currentStage++;
-            engineRef.current.setPhase('StageSelect');
+            node.cleared = true;
+            if (engineRef.current.currentStage > engineRef.current.maxStages) {
+                engineRef.current.setPhase('GameOver');
+            } else {
+                setPhase('MapSelect');
+                setStage(engineRef.current.currentStage);
+            }
+        } else {
+            engineRef.current.startStage();
+        }
+    };
+
+    const handleRewardSelect = (playerType: PlayerType) => {
+        if (engineRef.current) {
+            engineRef.current.team.push(new Player(engineRef.current.canvas.width / 2, engineRef.current.playAreaHeight - 40, playerType, true));
+            engineRef.current.currentStage++;
+
+            if (engineRef.current.currentStage > engineRef.current.maxStages) {
+                engineRef.current.setPhase('GameOver');
+            } else {
+                engineRef.current.setPhase('MapSelect');
+                setStage(engineRef.current.currentStage);
+            }
+        }
+    };
+
+    const handleArtifactSelect = (artifact: ArtifactType) => {
+        if (engineRef.current) {
+            engineRef.current.currentArtifacts.push(artifact);
+            engineRef.current.currentStage++;
+            if (engineRef.current.currentStage > engineRef.current.maxStages) {
+                engineRef.current.setPhase('GameOver');
+            } else {
+                engineRef.current.setPhase('MapSelect');
+                setStage(engineRef.current.currentStage);
+            }
         }
     };
 
@@ -181,6 +217,68 @@ const App: React.FC = () => {
                     </div>
                 )}
 
+                {phase === 'MapSelect' && (
+                    <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', background: 'rgba(0,0,0,0.9)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+                        <h2 style={{ color: 'white', position: 'absolute', top: 20 }}>ステージ {stage} を選択</h2>
+
+                        {/* Draw Map Nodes */}
+                        <div style={{ position: 'relative', width: '100%', height: '100%' }}>
+                            {/* Lines */}
+                            <svg style={{ position: 'absolute', width: '100%', height: '100%', pointerEvents: 'none' }}>
+                                {engineRef.current?.mapNodes.map((node: MapNode) =>
+                                    node.connectedTo.map((targetId: string) => {
+                                        const targetNode = engineRef.current?.mapNodes.find((n: MapNode) => n.id === targetId);
+                                        if (!targetNode) return null;
+                                        return (
+                                            <line key={`${node.id}-${targetId}`} x1={node.x} y1={node.y} x2={targetNode.x} y2={targetNode.y} stroke="rgba(255,255,255,0.3)" strokeWidth="2" />
+                                        );
+                                    })
+                                )}
+                            </svg>
+
+                            {/* Nodes */}
+                            {engineRef.current?.mapNodes.map((node: MapNode) => {
+                                const isCurrentLevel = node.level === stage;
+                                let canSelect = false;
+
+                                if (isCurrentLevel) {
+                                    if (stage === 1) {
+                                        canSelect = true; // Any node on level 1
+                                    } else if (engineRef.current?.currentNodeId) {
+                                        const prevNode = engineRef.current.mapNodes.find((n: MapNode) => n.id === engineRef.current?.currentNodeId);
+                                        if (prevNode && prevNode.connectedTo.includes(node.id)) {
+                                            canSelect = true;
+                                        }
+                                    }
+                                }
+
+                                const nodeColor = node.type === 'Boss' ? '#8e44ad' : node.type === 'Elite' ? '#e74c3c' : node.type === 'Shop' ? '#f1c40f' : '#3498db';
+
+                                return (
+                                    <div key={node.id}
+                                        onClick={() => canSelect ? handleNodeSelect(node) : null}
+                                        style={{
+                                            position: 'absolute',
+                                            left: node.x, top: node.y,
+                                            transform: 'translate(-50%, -50%)',
+                                            width: 50, height: 50,
+                                            borderRadius: '50%',
+                                            background: node.cleared ? '#555' : nodeColor,
+                                            border: canSelect ? '3px solid white' : '2px solid #333',
+                                            opacity: node.cleared ? 0.5 : (node.level < stage ? 0.2 : 1),
+                                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                            cursor: canSelect ? 'pointer' : 'default',
+                                            color: 'white', fontWeight: 'bold', fontSize: 12,
+                                            boxShadow: canSelect ? '0 0 15px white' : 'none'
+                                        }}>
+                                        {node.type === 'Boss' ? 'ボス' : node.type === 'Elite' ? '強敵' : node.type === 'Shop' ? '$' : '敵'}
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </div>
+                )}
+
                 {phase === 'RewardSelect' && (
                     <div style={{ textAlign: 'center' }}>
                         <h2>ステージクリア！</h2>
@@ -192,6 +290,26 @@ const App: React.FC = () => {
                                     <span>{t}</span>
                                 </button>
                             ))}
+                        </div>
+                    </div>
+                )}
+
+                {phase === 'ArtifactSelect' && (
+                    <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', background: 'rgba(0,0,0,0.8)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+                        <div style={{ textAlign: 'center' }}>
+                            <h2 style={{ color: '#f1c40f' }}>強敵撃破ボーナス</h2>
+                            <p style={{ color: 'white' }}>アーティファクトを選択してください：</p>
+                            <div style={{ display: 'flex', gap: 15, justifyContent: 'center', flexWrap: 'wrap', marginTop: 30 }}>
+                                <button onClick={() => handleArtifactSelect('FirstStrike')} style={{ padding: '15px 25px', fontSize: 16, background: '#e74c3c', color: 'white', border: 'none', borderRadius: 8, cursor: 'pointer' }}>
+                                    先制の一撃<br /><small>HP最大の敵へのダメージ2倍</small>
+                                </button>
+                                <button onClick={() => handleArtifactSelect('CoinUp')} style={{ padding: '15px 25px', fontSize: 16, background: '#f1c40f', color: 'black', border: 'none', borderRadius: 8, cursor: 'pointer' }}>
+                                    賞金稼ぎ<br /><small>敵撃破時の獲得コイン増加</small>
+                                </button>
+                                <button onClick={() => handleArtifactSelect('Thorns')} style={{ padding: '15px 25px', fontSize: 16, background: '#2ecc71', color: 'white', border: 'none', borderRadius: 8, cursor: 'pointer' }}>
+                                    イバラの盾<br /><small>防衛ラインに到達した敵にダメージ</small>
+                                </button>
+                            </div>
                         </div>
                     </div>
                 )}

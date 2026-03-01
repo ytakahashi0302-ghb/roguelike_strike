@@ -1,6 +1,7 @@
 export type PlayerType = 'Bounce' | 'Pierce' | 'Split' | 'Heavy' | 'Blast';
-export type EnemyType = 'Basic' | 'Shield' | 'Diver' | 'Spawner' | 'Mine';
+export type EnemyType = 'Basic' | 'Shield' | 'Diver' | 'Spawner' | 'Mine' | 'Boss';
 export type UltimateType = 'Nuke' | 'DoubleDamage' | 'Heal';
+export type ArtifactType = 'FirstStrike' | 'CoinUp' | 'Thorns';
 
 export const images: { [key: string]: HTMLImageElement } = {};
 export function loadImage(key: string, src: string) {
@@ -23,6 +24,9 @@ export class Player {
     baseSpeed: number;
     hasSplit: boolean = false;
     isChild: boolean = false;
+
+    // Trail effect
+    history: { x: number, y: number }[] = [];
 
     constructor(x: number, y: number, type: PlayerType = 'Bounce', isChild: boolean = false) {
         this.x = x;
@@ -53,11 +57,8 @@ export class Player {
         if (img && img.complete && img.naturalWidth > 0) {
             ctx.save();
             ctx.translate(this.x, this.y);
-            if (this.speed > 0.1) {
-                const angle = Math.atan2(this.vy, this.vx);
-                ctx.rotate(angle + Math.PI / 2);
-            }
-            const size = this.radius * 2.5;
+            // Characters are now sprites, do not rotate them
+            const size = this.radius * 3.5; // Increased size for visibility while keeping hitbox same
             ctx.drawImage(img, -size / 2, -size / 2, size, size);
             ctx.restore();
         } else {
@@ -80,6 +81,11 @@ export class Player {
 
     update(canvasWidth: number, canvasHeight: number, onStop: (p: Player) => void) {
         if (!this.active) return;
+
+        // Save history for trail
+        this.history.unshift({ x: this.x, y: this.y });
+        if (this.history.length > 10) this.history.pop();
+
         this.x += this.vx;
         this.y += this.vy;
         this.vx *= 0.993;
@@ -90,6 +96,7 @@ export class Player {
             this.active = false;
             this.vx = 0;
             this.vy = 0;
+            this.history = []; // Clear history when stopped
             onStop(this);
         }
 
@@ -145,6 +152,7 @@ export class Enemy {
             if (this.type === 'Diver') ctx.fillText("▼", this.x + this.width / 2, this.y - 10);
             else if (this.type === 'Spawner') ctx.fillText("∞", this.x + this.width / 2, this.y - 10);
             else if (this.type === 'Mine') ctx.fillText("💣", this.x + this.width / 2, this.y - 10);
+            else if (this.type === 'Boss') ctx.fillText("👹", this.x + this.width / 2, this.y - 10);
         }
 
         const hpPercent = Math.max(0, this.hp / this.maxHp);
@@ -168,6 +176,7 @@ export class Enemy {
             case 'Diver': return '#c0392b';
             case 'Spawner': return '#8e44ad';
             case 'Mine': return '#d35400';
+            case 'Boss': return '#8e44ad';
             default: return '#e74c3c';
         }
     }
